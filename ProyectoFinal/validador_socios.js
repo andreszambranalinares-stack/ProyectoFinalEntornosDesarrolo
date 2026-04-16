@@ -58,16 +58,15 @@ function procesarCSV(ruta) {
         let primerEmailValido = null;
         let ultimoEmailValido = null;
 
-        // 5. Procesamos cada registro saltando el header con slice(1)
-        const registros = lineas.slice(1);
-        for (let i = 0; i < registros.length; i++) {
-            const linea = registros[i];
+        // 5. Procesamos cada registro iterando desde la línea 0 (incluyendo el header)
+        for (let i = 0; i < lineas.length; i++) {
+            const linea = lineas[i];
             
             // Si la línea está vacía, la ignoramos sin crear arrays intermedios
             if (!linea.trim()) continue;
 
-            // Destructuring asumiendo que el email está en la primera columna
-            const [email] = linea.split(',');
+            // Usamos destructuring asumiendo que el CSV tiene 3 columnas
+            const [nombre, email, telefono] = linea.split(',');
             totalProcesados++; // Solo contamos las líneas con contenido real
             
             // Aseguramos que tenemos email definido
