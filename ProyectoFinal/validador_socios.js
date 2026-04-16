@@ -17,75 +17,108 @@ const archivoInvalidos = path.join(__dirname, 'emails_invalidos.csv');
  */
 const regexEmail = /^[^\s@]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.[a-zA-Z]{2,6}$/;
 
-function procesarCorreos() {
+/**
+ * Función separada para validar el formato de un correo electrónico.
+ * @param {string} email - Correo a validar.
+ * @returns {boolean} - true si es válido, false si no lo es.
+ */
+function esEmailValido(email) {
+    return regexEmail.test(email);
+}
+
+/**
+ * Procesa el archivo CSV de socios para validar sus correos.
+ * @param {string} ruta - La ruta al archivo CSV a procesar.
+ */
+function procesarCSV(ruta) {
     try {
         console.log('Iniciando el proceso de validación de correos...\n');
 
         // 1. Verificamos si el archivo de entrada existe (Manejo de errores explícito)
-        if (!fs.existsSync(archivoEntrada)) {
-            throw new Error(`El archivo de entrada no se encontró en la ruta: ${archivoEntrada}`);
+        if (!fs.existsSync(ruta)) {
+            throw new Error(`El archivo de entrada no se encontró en la ruta: ${ruta}`);
         }
 
         // 2. Leemos el archivo CSV de forma síncrona
-        const contenidoCSV = fs.readFileSync(archivoEntrada, 'utf-8');
+        const contenidoCSV = fs.readFileSync(ruta, 'utf-8');
         
         // Comprobamos que el archivo no esté vacío
         if (!contenidoCSV.trim()) {
              throw new Error('El archivo CSV está completamente vacío.');
         }
 
-        // 3. Separamos el contenido por líneas y eliminamos líneas vacías
-        const lineas = contenidoCSV.split(/\r?\n/).filter(linea => linea.trim() !== '');
+        // 3. Separamos el contenido por líneas de forma más eficiente (sin filter previo)
+        const lineas = contenidoCSV.split(/\r?\n/);
 
-        // 4. Procesamos las cabeceras para encontrar dinámicamente la columna 'email'
-        const cabeceras = lineas[0].split(',').map(h => h.trim().toLowerCase());
-        const indiceEmail = cabeceras.indexOf('email');
+        // Arrays renombrados a validEmails e invalidEmails
+        const validEmails = [];
+        const invalidEmails = [];
+        
+        let totalProcesados = 0;
+        let primerEmailValido = null;
+        let ultimoEmailValido = null;
 
-        // Validamos que exista la columna de correos electrónicos
-        if (indiceEmail === -1) {
-            throw new Error('Formato incorrecto: El archivo CSV debe contener una columna llamada "email".');
-        }
-
-        // Arrays para separar los resultados
-        const validos = [];
-        const invalidos = [];
-
-        // Agregamos las cabeceras a los archivos de salida
-        validos.push(lineas[0]);
-        invalidos.push(lineas[0]);
-
-        // 5. Procesamos cada registro iterando desde la línea 1 (saltando cabeceras)
-        for (let i = 1; i < lineas.length; i++) {
-            const columnas = lineas[i].split(',');
+        // 5. Procesamos cada registro saltando el header con slice(1)
+        const registros = lineas.slice(1);
+        for (let i = 0; i < registros.length; i++) {
+            const linea = registros[i];
             
-            // Aseguramos que la fila tenga suficientes columnas para leer el email
-            if (columnas.length > indiceEmail) {
-                const email = columnas[indiceEmail].trim(); // Extraemos y limpiamos
+            // Si la línea está vacía, la ignoramos sin crear arrays intermedios
+            if (!linea.trim()) continue;
 
-                // 6. Validamos el correo contra nuestra expresión regular
-                if (regexEmail.test(email)) {
-                    validos.push(lineas[i]);
+            // Destructuring asumiendo que el email está en la primera columna
+            const [email] = linea.split(',');
+            totalProcesados++; // Solo contamos las líneas con contenido real
+            
+            // Aseguramos que tenemos email definido
+            if (email !== undefined) {
+                // Extraemos, limpiamos y normalizamos a minúsculas
+                const emailNormalizado = email.trim().toLowerCase(); 
+
+                // 6. Validamos el correo usando la función extraída
+                if (esEmailValido(emailNormalizado)) {
+                    validEmails.push(linea);
+                    
+                    // Guardamos el primer y último email válido
+                    if (!primerEmailValido) {
+                        primerEmailValido = emailNormalizado;
+                    }
+                    ultimoEmailValido = emailNormalizado;
                 } else {
-                    invalidos.push(lineas[i]);
+                    invalidEmails.push(linea);
                 }
             } else {
                 // Fila mal formateada o incompleta se cuenta como inválida
-                invalidos.push(lineas[i]);
+                invalidEmails.push(linea);
             }
         }
 
-        // 7. Escribimos los resultados en sus respectivos archivos usando fs
-        fs.writeFileSync(archivoValidos, validos.join('\n'), 'utf-8');
-        fs.writeFileSync(archivoInvalidos, invalidos.join('\n'), 'utf-8');
+        // 7. Construimos el string completo y escribimos usando un solo fs.writeFileSync
+        const contenidoValidos = validEmails.join('\n');
+        const contenidoInvalidos = invalidEmails.join('\n');
+        
+        fs.writeFileSync(archivoValidos, contenidoValidos, 'utf-8');
+        fs.writeFileSync(archivoInvalidos, contenidoInvalidos, 'utf-8');
 
-        // 8. Calculamos y mostramos el resumen por consola
-        const totalProcesados = lineas.length - 1; // Restamos la cabecera
-        const totalValidos = validos.length - 1;
-        const totalInvalidos = invalidos.length - 1;
+        // 8. Calculamos y mostramos el resumen por consola (sin restarle 1 porque ya no metemos header manual)
+        const totalValidos = validEmails.length;
+        const totalInvalidos = invalidEmails.length;
+        
+        // Calculamos el porcentaje sobre el total procesado
+        const porcentajeValidos = totalProcesados > 0 
+            ? ((totalValidos / totalProcesados) * 100).toFixed(2) 
+            : 0;
 
         console.log('--- Resumen de Validación de Correos ---');
         console.log(`📑 Total de registros leídos: ${totalProcesados}`);
-        console.log(`✅ Correos Válidos:    ${totalValidos} (Exportados a emails_validos.csv)`);
+        console.log(`✅ Correos Válidos:    ${totalValidos} (${porcentajeValidos}%) (Exportados a emails_validos.csv)`);
+        
+        // Mostrar también el primer y último email válido si se encontraron
+        if (primerEmailValido) {
+            console.log(`   - Primer válido: ${primerEmailValido}`);
+            console.log(`   - Último válido: ${ultimoEmailValido}`);
+        }
+        
         console.log(`❌ Correos Inválidos:  ${totalInvalidos} (Exportados a emails_invalidos.csv)`);
         console.log('----------------------------------------');
 
@@ -97,4 +130,4 @@ function procesarCorreos() {
 }
 
 // Invocamos la función principal
-procesarCorreos();
+procesarCSV(archivoEntrada);
